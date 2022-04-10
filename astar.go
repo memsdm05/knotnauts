@@ -2,80 +2,124 @@ package main
 
 import (
 	"container/heap"
-	"fmt"
 	"math"
 )
 
 
-func h(here, goal Pos) float64 {
-	return math.Abs(float64(here.X - goal.X)) + math.Abs(float64(here.Y - goal.Y))
+func h(from, to Pos) float64 {
+	return math.Abs(float64(from.X - to.X)) + math.Abs(float64(from.Y - to.Y))
 }
 
-func g(here, start Pos) (sum float64) {
-	for here.prev != nil {
-		sum += here.fscore
-		here = *here.prev
-	}
-	return
-}
+type node struct {
+	Pos
 
-type Pos struct {
-	X, Y int
-	prev *Pos
-
-	fscore float64
+	fScore float64
 	gScore float64
+	prev *node
 }
 
-type PosMinHeap []Pos
+type NodeMinHeap []*node
 
-func (p PosMinHeap) Len() int {
-	return len(p)
+func (n NodeMinHeap) has(node *node) bool {
+	for _, check := range n {
+		if check == node {
+			return true
+		}
+	}
+	return false
 }
 
-func (p PosMinHeap) Less(i, j int) bool {
-	return p[i].fscore < p[j].fscore
+func (n NodeMinHeap) Len() int {
+	return len(n)
 }
 
-func (p PosMinHeap) Swap(i, j int) {
-	p[i],  p[j] = p[j],  p[i]
+func (n NodeMinHeap) Less(i, j int) bool {
+	return n[i].fScore < n[j].fScore
 }
 
-func (p *PosMinHeap) Push(x interface{}) {
-	*p = append(*p, x.(Pos))
+func (n NodeMinHeap) Swap(i, j int) {
+	n[i],  n[j] = n[j],  n[i]
 }
 
-func (p *PosMinHeap) Pop() interface{} {
-	old := *p
+func (n *NodeMinHeap) Push(x interface{}) {
+	*n = append(*n, x.(*node))
+}
+
+func (n *NodeMinHeap) Pop() interface{} {
+	old := *n
 	i := len(old) - 1
 	ret := old[i]
-	*p = old[:i]
+	*n = old[:i]
 	return ret
 }
 
+var graph = map[Pos]*node{}
 
-func AStar(start, end Pos, maze Maze) {
-	openSet := &PosMinHeap{ start }
+func push(n *node) *node {
+	if n == nil {
+		return nil
+	}
+	graph[n.Pos] = n
+	return n
+}
+
+func maybeGet(pos Pos, prev *node) *node {
+	if n, ok := graph[pos]; ok {
+		return n
+	} else {
+		return push(newNode(pos, prev))
+	}
+}
+
+func newNode(pos Pos, prev *node) *node {
+	return &node{
+		Pos:    pos,
+		fScore: math.Inf(1),
+		gScore: math.Inf(1),
+		prev:   prev,
+	}
+}
+
+func AStar(start, end Pos, maze Maze) (path []Pos) {
+	// init start node
+	startNode := push(newNode(start, nil))
+	startNode.gScore = 0
+	startNode.fScore = h(startNode.Pos, end)
+
+	// init heap
+	openSet := &NodeMinHeap{ startNode }
 	heap.Init(openSet)
 
-	fmt.Println(Pos{X: 10, Y: 0} == Pos{X: 0, Y: 0})
-
-	heap.Push(openSet, Pos{fscore: 10})
-	heap.Push(openSet, Pos{fscore: 3})
-	heap.Push(openSet, Pos{fscore: 2})
-
-	for i := 0; i < 4; i++ {
-		fmt.Println(heap.Pop(openSet))
-	}
-
-	//gScore := math.Inf(1)
-	//_ = gScore
-
 	for len(*openSet) > 0 {
-		current := heap.Pop(openSet).(Pos)
-		if current == end {
-			break // return path
+		current := heap.Pop(openSet).(*node)
+		if current.Pos == end {
+			for current.prev != nil {
+				path = append(path, current.Pos)
+				current = current.prev
+			}
+			return
 		}
 
+		tile := maze[current.Y][current.X]
+		for _, wall := range EveryWall {
+			if tile.Has(wall) {
+				continue
+			}
+			npos := wall.Delta(current.Pos)
+			neighbor := maybeGet(npos, current)
+
+			tgScore := current.gScore + 1 // delta is always 1
+			if tgScore < neighbor.gScore {
+				neighbor.prev = current
+				neighbor.gScore = tgScore
+				neighbor.fScore = tgScore + h(npos, end)
+
+				if !openSet.has(neighbor) {
+					openSet.Push(neighbor)
+				}
+			}
+		}
 	}
+
+	return
 }
