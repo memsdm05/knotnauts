@@ -2,211 +2,121 @@ package main
 
 import (
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 	"golang.org/x/image/colornames"
+	"image"
 	"image/color"
-	"math/rand"
-	"strings"
+	"math"
 )
 
-type Pos struct {
-	X, Y int
-}
-
-func randWalls() []Wall {
-	walls := []Wall{ N, S, E, W }
-	rand.Shuffle(4, func(i, j int) {
-		walls[i], walls[j] = walls[j], walls[i]
-	})
-	return walls
-}
-
-type Wall uint
 const (
-	N Wall = 1 << iota
-	S
-	E
-	W
+	Regular = iota
+	Start
+	End
 )
 
-var EveryWall = []Wall{ N, S, E, W }
-
-func (w Wall) Has(other Wall) bool {
-	return w & other != 0
-}
-
-//func (w Wall) Neighbors(at Pos, walls Wall) []Pos {
-//	var neighbors []Pos
-//	for _, currentWall := range []Wall{ N, S, E, W } {
-//		if !walls.Has(currentWall) {
-//			continue
-//		}
-//
-//		neighbor := Pos{}
-//		neighbor = currentWall.Delta(at)
-//		neighbors = append(neighbors, neighbor)
-//	}
-//
-//	return neighbors
-//}
-
-type Piece int
-const(
-	Empty = iota
-	Path
-	Goal
+var (
+	emptyImage    = ebiten.NewImage(3, 3)
+	emptySubImage = emptyImage.SubImage(image.Rect(1, 1, 2, 2)).(*ebiten.Image)
 )
 
-var Opposite = map[Wall]Wall {
-	N: S,
-	S: N,
-	E: W,
-	W: E,
+func init() {
+	emptyImage.Fill(color.White)
 }
 
-func (w Wall) Delta(p Pos) Pos {
-	switch w {
-	case N:
-		p.Y--
-	case S:
-		p.Y++
-	case E:
-		p.X++
-	case W:
-		p.X--
+func Link(n1, n2 *Node) {
+	if !n1.NeighborsWith(n2) {
+		n1.Neighbors = append(n1.Neighbors, n2)
 	}
-	return p
-}
 
-type Tile struct {
-	Wall
-	Piece
-}
-
-type Maze [][]Tile
-
-func NewMaze(width, height int) Maze {
-	m := make(Maze, height)
-	for i := 0; i < height; i++ {
-		m[i] = make([]Tile, width)
-	}
-	m.carve(Pos{})
-	return m
-}
-
-func (m Maze) Width() int {
-	return len(m[0])
-}
-
-func (m Maze) Height() int {
-	return len(m)
-}
-
-func (m Maze) WithinBounds(pos Pos) bool {
-	return pos.X >= 0 && pos.X < m.Width() && pos.Y >= 0 && pos.Y < m.Height()
-}
-
-func (m *Maze) carve(cpos Pos) {
-	maze := *m
-	cx, cy := cpos.X, cpos.Y
-	for _, wall := range randWalls() {
-		npos := wall.Delta(cpos)
-		nx, ny := npos.X, npos.Y
-		if !(maze.WithinBounds(npos) && maze[ny][nx].Wall == 0) {
-			continue
-		}
-
-		maze[cy][cx].Wall |= wall
-		maze[ny][nx].Wall |= Opposite[wall]
-		maze.carve(npos)
+	if !n2.NeighborsWith(n1) {
+		n2.Neighbors = append(n2.Neighbors, n1)
 	}
 }
 
-func ifWrite(cond bool, sb *strings.Builder) {
-	if cond {
-		sb.WriteString(" ")
-	} else {
-		sb.WriteString("_")
-	}
+
+type Node struct {
+	X, Y float64
+	Neighbors []*Node
+	Status int
+
+	// for A*
+	fScore, gScore float64
+	prev *Node
+	pathPoint bool
+
+	// for graphics
+	path vector.Path
 }
 
-func (m Maze) String() string {
-	var sb strings.Builder
-	sb.WriteString("  " + strings.Repeat("_", (m.Width() * 2) - 1) + "\n")
-	for i := 0; i < m.Height(); i++ {
-		sb.WriteString("|")
-		for j := 0; j < m.Width(); j++ {
-			ifWrite(m[i][j].Has(S), &sb)
-			if m[i][j].Has(E) {
-				ifWrite((m[i][j].Wall | m[i][j+1].Wall).Has(S), &sb)
-			} else {
-				sb.WriteString("|")
-			}
-		}
-		sb.WriteString("\n")
-	}
-	return sb.String()
+func (n *Node) Reset() {
+	n.fScore = math.Inf(1)
+	n.gScore = math.Inf(1)
+	n.prev = nil
+	n.pathPoint = false
 }
 
-func (m Maze) Draw(dst *ebiten.Image) {
-	width, height := dst.Size()
-	dw, dh := float64(width / m.Width()), float64(height / m.Height())
-	for i := 0; i < m.Height(); i++ {
-		for j := 0; j < m.Width(); j++ {
-			tile := m[i][j]
-			cx, cy := float64(j) * dw, float64(i) * dh
-
-			// draw tiles
-			var c color.Color
-			switch tile.Piece {
-			case Empty:
-				c = colornames.White
-			case Path:
-				c = colornames.Red
-			case Goal:
-				c = colornames.Green
-			}
-
-			_ = c
-			//if (i + j) % 2 == 0 {
-			//	c = colornames.Purple
-			//}
-			//ebitenutil.DrawRect(dst, cx, cy, dw, dh, c)
-
-			//fmt.Printf("%b\n", tile.Wall)
-
-			if tile.Has(S) {
-				ebitenutil.DrawLine(dst, cx, cy + dh, cx + dw, cy + dh, colornames.White)
-			}
-
-			if tile.Has(E) {
-				ebitenutil.DrawLine(dst, cx + dw, cy, cx + dw, cy + dh, colornames.White)
-			}
-
-
-
-
-			// draw walls
-			//for _, wall := range EveryWall {
-			//	if !tile.Has(wall) { continue }
-			//	//t := wall.Delta(Pos{j, i})
-			//	//x, y := float64(t.X) * dw, float64(t.Y) * dh
-			//
-			//	// OH GOD
-			//	black := colornames.Black
-			//	switch wall {
-			//	case N:
-			//		ebitenutil.DrawLine(dst, cx, cy, cx + dw, cy, colornames.Green)
-			//	case S:
-			//		ebitenutil.DrawLine(dst, cx, cy + dh, cx + dw, cy + dh, colornames.Black)
-			//	case E:
-			//		ebitenutil.DrawLine(dst, cx + dw, cy, cx + dw, cy + dh, black)
-			//	case W:
-			//		ebitenutil.DrawLine(dst, cx, cy, cx, cy + dh, black)
-			//	}
-			//
-			//}
+func (n *Node) NeighborsWith(other *Node) bool {
+	for _, neighbor := range n.Neighbors {
+		if other == neighbor {
+			return true
 		}
 	}
+	return false
 }
+
+func NewNode(x, y float64) *Node {
+	return &Node{
+		X: x,
+		Y: y,
+		fScore: math.Inf(1),
+		gScore: math.Inf(1),
+		prev:   nil,
+	}
+}
+
+func (n *Node) dist(x, y float64) float64{
+	dx, dy := n.X - x, n.Y - y
+	return math.Sqrt(dx * dx + dy * dy)
+}
+
+func (n *Node) Dist(other *Node) float64 {
+	return other.dist(other.X, other.Y)
+}
+
+func drawCircle(dst *ebiten.Image, x, y, radius float64, clr color.Color) {
+	r, g, b, _ := clr.RGBA()
+	var path vector.Path
+	path.Arc(float32(x), float32(y),
+		float32(radius), 0, 2 * math.Pi, vector.Clockwise)
+
+
+	op := &ebiten.DrawTrianglesOptions{
+		FillRule: ebiten.EvenOdd,
+	}
+	vs, is := path.AppendVerticesAndIndicesForFilling(nil, nil)
+	for i := range vs {
+		vs[i].SrcX = 1
+		vs[i].SrcY = 1
+		vs[i].ColorR = float32(r) / float32(0xffff)
+		vs[i].ColorG = float32(g) / float32(0xffff)
+		vs[i].ColorB = float32(b) / float32(0xffff)
+	}
+	dst.DrawTriangles(vs, is, emptySubImage, op)
+}
+
+func (n *Node) Draw(dst *ebiten.Image) {
+	clr := colornames.Purple
+	switch n.Status {
+	case Regular:
+		clr = colornames.Orange
+	case Start:
+		clr = colornames.White
+	case End:
+		clr = colornames.Lightgreen
+	}
+
+	drawCircle(dst, n.X, n.Y, 10, clr)
+}
+
 

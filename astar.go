@@ -2,25 +2,11 @@ package main
 
 import (
 	"container/heap"
-	"math"
 )
 
+type NodeMinHeap []*Node
 
-func h(from, to Pos) float64 {
-	return math.Abs(float64(from.X - to.X)) + math.Abs(float64(from.Y - to.Y))
-}
-
-type node struct {
-	Pos
-
-	fScore float64
-	gScore float64
-	prev *node
-}
-
-type NodeMinHeap []*node
-
-func (n NodeMinHeap) has(node *node) bool {
+func (n NodeMinHeap) has(node *Node) bool {
 	for _, check := range n {
 		if check == node {
 			return true
@@ -42,7 +28,7 @@ func (n NodeMinHeap) Swap(i, j int) {
 }
 
 func (n *NodeMinHeap) Push(x interface{}) {
-	*n = append(*n, x.(*node))
+	*n = append(*n, x.(*Node))
 }
 
 func (n *NodeMinHeap) Pop() interface{} {
@@ -53,66 +39,36 @@ func (n *NodeMinHeap) Pop() interface{} {
 	return ret
 }
 
-var graph = map[Pos]*node{}
-
-func push(n *node) *node {
-	if n == nil {
-		return nil
+func AStar(start, end *Node) {
+	h := func(node *Node) float64 {
+		return node.Dist(end)
 	}
-	graph[n.Pos] = n
-	return n
-}
 
-func maybeGet(pos Pos, prev *node) *node {
-	if n, ok := graph[pos]; ok {
-		return n
-	} else {
-		return push(newNode(pos, prev))
-	}
-}
-
-func newNode(pos Pos, prev *node) *node {
-	return &node{
-		Pos:    pos,
-		fScore: math.Inf(1),
-		gScore: math.Inf(1),
-		prev:   prev,
-	}
-}
-
-func AStar(start, end Pos, maze Maze) (path []Pos) {
 	// init start node
-	startNode := push(newNode(start, nil))
-	startNode.gScore = 0
-	startNode.fScore = h(startNode.Pos, end)
+	start.gScore = 0
+	start.fScore = h(start)
 
 	// init heap
-	openSet := &NodeMinHeap{ startNode }
+	openSet := &NodeMinHeap{ start }
 	heap.Init(openSet)
 
 	for len(*openSet) > 0 {
-		current := heap.Pop(openSet).(*node)
-		if current.Pos == end {
+		current := heap.Pop(openSet).(*Node)
+		if current == end {
 			for current.prev != nil {
-				path = append(path, current.Pos)
+				current.pathPoint = true
 				current = current.prev
 			}
 			return
 		}
 
-		tile := maze[current.Y][current.X]
-		for _, wall := range EveryWall {
-			if tile.Has(wall) {
-				continue
-			}
-			npos := wall.Delta(current.Pos)
-			neighbor := maybeGet(npos, current)
+		for _, neighbor := range current.Neighbors {
 
-			tgScore := current.gScore + 1 // delta is always 1
+			tgScore := current.gScore + current.Dist(neighbor)
 			if tgScore < neighbor.gScore {
 				neighbor.prev = current
 				neighbor.gScore = tgScore
-				neighbor.fScore = tgScore + h(npos, end)
+				neighbor.fScore = tgScore + h(neighbor)
 
 				if !openSet.has(neighbor) {
 					openSet.Push(neighbor)
