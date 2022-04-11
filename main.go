@@ -1,11 +1,11 @@
 package main
 
 import (
-	"fmt"
+	"github.com/fogleman/delaunay"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"golang.org/x/image/colornames"
-	"math"
 	"math/rand"
 	"time"
 )
@@ -13,6 +13,7 @@ import (
 type MamaMiaGame struct {
 	nodeset []*Node
 	start, goal *Node
+	selected *Node
 }
 
 func randomNode() *Node {
@@ -20,18 +21,44 @@ func randomNode() *Node {
 	return NewNode(rand.Float64() * float64(w), rand.Float64() * float64(h))
 }
 
-func (m MamaMiaGame) find(x, y float64) *Node {
-	var (
-		minDist = math.Inf(1)
-		minNode *Node
-	)
-	for _, node := range m.nodeset {
-		if dist := node.dist(x, y); dist < minDist {
-			minDist = dist
-			minNode = node
+func (m *MamaMiaGame) RecalculateDelaunay() {
+	vertexset := make([]delaunay.Point, len(m.nodeset))
+	for i, node := range m.nodeset {
+		node.Neighbors = nil
+		vertexset[i].X = node.X
+		vertexset[i].Y = node.Y
+	}
+
+	triangulation, err := delaunay.Triangulate(vertexset)
+	if err != nil {
+		panic(err)
+	}
+
+	ts := triangulation.Triangles
+	hs := triangulation.Halfedges
+	for i, h := range hs {
+		if i > h {
+			n1 := m.nodeset[ts[i]]
+			n2 := m.nodeset[ts[nextHE(i)]]
+			Link(n1, n2)
 		}
 	}
-	return minNode
+}
+
+func (m MamaMiaGame) find(x, y float64) *Node {
+	for _, node := range m.nodeset {
+		if dist := node.dist(x, y); dist < 10 {
+			return node
+		}
+	}
+	return nil
+}
+
+func nextHE(e int) int {
+	if e % 3 == 2 {
+		return e - 2
+	}
+	return e + 1
 }
 
 func (m *MamaMiaGame) Init(n int)  {
@@ -39,28 +66,74 @@ func (m *MamaMiaGame) Init(n int)  {
 	m.start.Status = Start
 	m.start.pathPoint = true
 
+	for i := 0; i < 10; i++ {
+		rand.Float64() // stop spawning rig
+	}
 	m.goal = randomNode()
 	m.goal.Status = End
 
+	// build nodes
 	m.nodeset = []*Node{ m.start, m.goal }
-
 	for i := 0; i < n - 2; i++ {
 		m.nodeset = append(m.nodeset, randomNode())
 	}
 
-	for _, node := range m.nodeset {
-		for i := 0; i < 2; i++ {
-			rando := m.nodeset[rand.Intn(len(m.nodeset))]
-			if !node.NeighborsWith(rando) {
-				Link(node, rando)
-			}
-		}
-	}
+	// trianglate
+	m.recalc()
+}
 
+func (m *MamaMiaGame) recalc()  {
+	m.RecalculateDelaunay()
+	for _, node := range m.nodeset {
+		node.Reset()
+	}
+	m.start.pathPoint = true
 	AStar(m.start, m.goal)
 }
 
-func (m MamaMiaGame) Update() error {
+func (m *MamaMiaGame) Update() error {
+	x, y := ebiten.CursorPosition()
+	mx, my := float64(x), float64(y)
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		if node := m.find(mx, my); node != nil {
+			m.selected = node
+		}
+	}
+
+	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) && m.selected != nil {
+		m.recalc()
+		m.selected.X = mx
+		m.selected.Y = my
+	}
+
+	if inpututil.IsMouseButtonJustReleased(ebiten.MouseButtonLeft) {
+		m.selected = nil
+	}
+
+	if inpututil.IsKeyJustPressed(ebiten.KeyN) {
+		m.nodeset = append(m.nodeset, NewNode(mx, my))
+		m.recalc()
+	}
+
+	if ebiten.IsKeyPressed(ebiten.KeyDelete) || ebiten.IsKeyPressed(ebiten.KeyBackspace) {
+		if node := m.find(mx, my); node != nil && len(m.nodeset) > 3{
+			if node == m.start || node == m.goal {
+				goto nope // lol
+			}
+
+			for i := 0; i < len(m.nodeset); i++ {
+				if m.nodeset[i] == node {
+					m.nodeset[i] = m.nodeset[len(m.nodeset) - 1]
+					m.nodeset = m.nodeset[:len(m.nodeset) - 1]
+					m.recalc()
+					break
+				}
+			}
+
+			nope:
+		}
+	}
+
 	return nil
 }
 
@@ -86,11 +159,9 @@ func (m MamaMiaGame) Layout(outsideWidth, outsideHeight int) (screenWidth, scree
 func main()  {
 	rand.Seed(time.Now().UnixNano())
 	ebiten.SetWindowSize(500, 500)
-
+	ebiten.SetWindowResizable(true)
 	game := new(MamaMiaGame)
 	game.Init(20)
-
-	fmt.Println(game.nodeset[0])
 	ebiten.RunGame(game)
 
 

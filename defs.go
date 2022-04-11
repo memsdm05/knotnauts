@@ -44,6 +44,7 @@ type Node struct {
 	fScore, gScore float64
 	prev *Node
 	pathPoint bool
+	visited bool
 
 	// for graphics
 	path vector.Path
@@ -53,6 +54,7 @@ func (n *Node) Reset() {
 	n.fScore = math.Inf(1)
 	n.gScore = math.Inf(1)
 	n.prev = nil
+	n.visited = false
 	n.pathPoint = false
 }
 

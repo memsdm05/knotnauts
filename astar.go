@@ -20,7 +20,7 @@ func (n NodeMinHeap) Len() int {
 }
 
 func (n NodeMinHeap) Less(i, j int) bool {
-	return n[i].fScore < n[j].fScore
+	return n[i].fScore > n[j].fScore
 }
 
 func (n NodeMinHeap) Swap(i, j int) {
@@ -62,7 +62,11 @@ func AStar(start, end *Node) {
 			return
 		}
 
+		current.visited = true
 		for _, neighbor := range current.Neighbors {
+			if neighbor.visited {
+				continue
+			}
 
 			tgScore := current.gScore + current.Dist(neighbor)
 			if tgScore < neighbor.gScore {
